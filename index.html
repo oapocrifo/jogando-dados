@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rolagens da mesa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --feltro: #1d3b33;
+    --feltro-escuro: #142a24;
+    --osso: #f1ede2;
+    --latao: #d4ab3a;
+    --texto: #e6eee9;
+    --apagado: #93aba2;
+    --erro: #ff9a8a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--feltro);
+    color: var(--texto);
+    font: 400 1.0625rem/1.5 "Alegreya Sans", system-ui, sans-serif;
+  }
+  main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 1.25rem; }
+  h1 small { font-weight: 400; color: var(--apagado); font-size: 1rem; }
+
+  form { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .75rem; }
+  label { display: grid; gap: .25rem; font-size: .9rem; color: var(--apagado); }
+  input {
+    font: inherit; color: var(--texto);
+    background: var(--feltro-escuro);
+    border: 1px solid #3c5e54; border-radius: 6px;
+    padding: .5rem .6rem; width: 100%;
+  }
+  input:focus-visible { outline: 2px solid var(--latao); outline-offset: 1px; }
+
+  .dados { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .5rem; }
+  .dados button {
+    width: 4.25rem; height: 4.25rem;
+    border: 0; cursor: pointer;
+    background: var(--osso); color: var(--feltro-escuro);
+    font: 800 1.05rem "Alegreya Sans", system-ui, sans-serif;
+  }
+  .dados button:hover, .dados button:focus-visible { background: var(--latao); outline: none; }
+  .dados button:active { transform: scale(.94); }
+  .d4   { clip-path: polygon(50% 0, 100% 100%, 0 100%); padding-top: 1.4rem; }
+  .d6   { clip-path: inset(0 round 14%); }
+  .d8   { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+  .d10  { clip-path: polygon(50% 0, 100% 42%, 50% 100%, 0 42%); }
+  .d12  { clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
+  .d20  { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+  .d100 { clip-path: circle(50%); }
+
+  #status { min-height: 1.5rem; margin: 1rem 0 .5rem; font-size: .9rem; color: var(--apagado); }
+  #status.erro { color: var(--erro); }
+
+  ol { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: .1rem 1rem; padding: .75rem 0;
+    border-bottom: 1px solid #2f5248;
+  }
+  .quem { font-weight: 700; }
+  .quem span { font-weight: 400; color: var(--apagado); margin-left: .4rem; }
+  .valores { grid-column: 1; color: var(--apagado); font-size: .95rem; }
+  .total { grid-row: 1 / 3; grid-column: 2; font-size: 2rem; font-weight: 800; color: var(--osso); }
+  .maximo { color: var(--latao); font-weight: 700; }
+
+  @media (max-width: 30rem) {
+    form { grid-template-columns: 1fr 1fr; }
+    label:first-child { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dados button:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rolagens da mesa <small id="mesa"></small></h1>
+
+  <form id="controles">
+    <label>Seu nome <input id="nome" required maxlength="30" autocomplete="nickname"></label>
+    <label>Quantidade <input id="qtd" type="number" min="1" max="20" value="1" required></label>
+    <label>Modificador <input id="mod" type="number" min="-50" max="50" value="0" required></label>
+    <div class="dados" role="group" aria-label="Escolha o dado para rolar">
+      <button class="d4" value="4">d4</button>
+      <button class="d6" value="6">d6</button>
+      <button class="d8" value="8">d8</button>
+      <button class="d10" value="10">d10</button>
+      <button class="d12" value="12">d12</button>
+      <button class="d20" value="20">d20</button>
+      <button class="d100" value="100">d100</button>
+    </div>
+  </form>
+
+  <p id="status" role="status">Conectando…</p>
+  <ol id="log" aria-live="polite"></ol>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, push, query, limitToLast, onChildAdded, onValue, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // Cole aqui o objeto copiado do console do Firebase (Configurações do projeto > Seus apps)
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAX_APpKRlIK7FLEeCbt7RtfOWnVsmGQaU",
+  authDomain: "registros-apocrifos.firebaseapp.com",
+  databaseURL: "https://registros-apocrifos-default-rtdb.firebaseio.com",
+  projectId: "registros-apocrifos",
+  storageBucket: "registros-apocrifos.firebasestorage.app",
+  messagingSenderId: "675538911973",
+  appId: "1:675538911973:web:2476ab8b45d0bd19024a0c",
+  measurementId: "G-2ZYWH9FDBW"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+  const $ = id => document.getElementById(id);
+  const db = getDatabase(initializeApp(firebaseConfig));
+
+  // Cada grupo usa ?mesa=nome no link. Remove caracteres proibidos em chaves do Firebase.
+  const mesa = (new URLSearchParams(location.search).get("mesa") || "principal").replace(/[.#$\[\]\/]/g, "-");
+  $("mesa").textContent = mesa;
+  const rolagens = ref(db, `mesas/${mesa}/rolagens`);
+
+  $("nome").value = localStorage.getItem("nome") ?? "";
+
+  onValue(ref(db, ".info/connected"), s => {
+    $("status").classList.remove("erro");
+    $("status").textContent = s.val() ? "Conectado" : "Sem conexão. Tentando reconectar…";
+  });
+
+  const d = lados => crypto.getRandomValues(new Uint32Array(1))[0] % lados + 1;
+
+  $("controles").addEventListener("submit", e => {
+    e.preventDefault();
+    const nome = $("nome").value.trim();
+    const lados = Number(e.submitter.value);
+    const qtd = Number($("qtd").value);
+    const mod = Number($("mod").value);
+    const valores = Array.from({ length: qtd }, () => d(lados));
+    localStorage.setItem("nome", nome);
+    push(rolagens, {
+      jogador: nome, lados, mod, valores,
+      total: valores.reduce((a, b) => a + b, 0) + mod,
+      hora: serverTimestamp()
+    }).catch(err => {
+      $("status").classList.add("erro");
+      $("status").textContent = "A rolagem não foi enviada: " + err.message;
+    });
+  });
+
+  onChildAdded(query(rolagens, limitToLast(50)), s => {
+    const r = s.val();
+    const sinal = r.mod > 0 ? "+" + r.mod : r.mod < 0 ? String(r.mod) : "";
+    const hora = new Date(r.hora).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+    const li = document.createElement("li");
+    const quem = li.appendChild(document.createElement("div"));
+    quem.className = "quem";
+    quem.textContent = r.jogador;
+    quem.appendChild(document.createElement("span")).textContent = `${r.valores.length}d${r.lados}${sinal} · ${hora}`;
+
+    const valores = li.appendChild(document.createElement("div"));
+    valores.className = "valores";
+    r.valores.forEach((v, i) => {
+      if (i) valores.append(", ");
+      const b = valores.appendChild(document.createElement("span"));
+      b.textContent = v;
+      if (v === r.lados) b.className = "maximo";
+    });
+
+    const total = li.appendChild(document.createElement("div"));
+    total.className = "total";
+    total.textContent = r.total;
+
+    $("log").prepend(li);
+    $("log").children[50]?.remove();
+  });
+</script>
+</body>
+</html>
